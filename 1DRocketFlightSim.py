@@ -5,7 +5,7 @@
 Author: Ivan Krat 
 Initial Release: 2021  
 Latest Update: 2025-05-22  
-Version: 3.3
+Version: 4.0
 
 Description:
 ------------
@@ -35,6 +35,7 @@ Version History:
 v1.0 - 2021: Initial release with basic motion under constant thrust  
 v2.0 - Added aerodynamic drag modeling  
 v3.0 - Replaced loop-based calculations with a more efficient vectorized approach using linear algebra
+v4.0 - Improved drag models and added more features for displaying and exporting simulation data
 
 TODO:
 -----
@@ -48,7 +49,7 @@ TODO:
 - [ ] height dependent gravity
 - [ ] add parachut staging
 - [ ] add super sonic drag modeling
-- [ ] add skin drag modeling
+- [x] add skin drag modeling
 - [ ] convert to full 3D sim
 """
 
@@ -65,15 +66,19 @@ rho_STP = 23.67*(10**-4)  # (desnity at standard tempurature and pressure) slug/
 g = 32.17                 # (gravity) ft/s^2
 
 # Input Variables
-A = 14**2/4*np.pi/144     # (frontal area) ft^2
+D = 11                    # (diameter) in
+L = 18                    # (rocket length) ft
 Cd = 0.75                 # (ballistic coeff)
+Cf = 0.004                # (friction coeff)
 F_t = 3000                # (thrust) lbm
-m_0 = 250/g               # (dry mass) slugs
+m_0 = 225/g               # (dry mass) slugs
 m_p = 300/g               # (propellent mass) slugs
 m_dot = 10/g              # (mass flow) slugs
 t_step = 0.1              # (delta t) sec
 
 # Calculated Values
+A = D**2/4*np.pi/144      # (frontal area) ft^2
+S = L*D*np.pi/144         # (surface area) ft^2
 t_burn = m_p/m_dot        # (burn time) sec
 m_net = m_0 + m_p         # (starting mass) slugs
 F_net = F_t + m_net*-g    # (starting net force) lbm
@@ -86,7 +91,7 @@ M_n = np.array([[1], [0], [0], [F_net], [m_net], [rho_STP], [0], [1]])  # state 
 M_s = np.array([[1, t_step, 0, 0, 0, 0, 0, 0],                          # system matrix
                 [0, 1, t_step, 0, 0, 0, 0, 0], 
                 [0, 0, 0, 1/(M_n[4, 0]), 0, 0, 0, 0],
-                [0, -0.5*Cd*A*M_n[5, 0]*abs(M_n[1, 0]), 0, 0, -g, 0, 0, F_t], 
+                [0, -0.5*M_n[5, 0]*abs(M_n[1, 0])*(Cd*A + Cf*S), 0, 0, -g, 0, 0, F_t], 
                 [0, 0, 0, 0, 1, 0, 0, -m_dot*t_step], 
                 [0, 0, 0, 0, 0, 0, 0, rho_STP],
                 [0, 0, 0, 0, 0, 0, 1, t_step],
@@ -104,7 +109,7 @@ while M_n[0, 0] > 0:
         M_s[3, 7], M_s[4, 7] = 0, 0
 
     # Update system matrix
-    M_s[3, 1] = -0.5*Cd*A*M_n[5, 0]*abs(M_n[1, 0])     
+    M_s[3, 1] = -0.5*M_n[5, 0]*abs(M_n[1, 0])*(Cd*A + Cf*S)    
     M_s[5, 7] = (5.1483*10**(-3))/(1 + np.exp((4.74359*10**(-5))*M_n[0, 0] + 0.168201))
 
     # Calculate solution
