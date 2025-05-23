@@ -5,7 +5,7 @@
 Author: Ivan Krat 
 Initial Release: 2021  
 Latest Update: 2025-05-22  
-Version: 3.2
+Version: 3.3
 
 Description:
 ------------
@@ -20,7 +20,8 @@ providing a simplified but realistic model of suborbital rocket flight in Earth'
 Libraries Used:
 ---------------
 - NumPy: for efficient numerical computation
-- Matplotlib: for plotting flight trajectory
+- Matplotlib: for plotting sim data
+- Pandas: for data display
 
 Assumptions:
 ------------
@@ -34,12 +35,28 @@ Version History:
 v1.0 - 2021: Initial release with basic motion under constant thrust  
 v2.0 - Added aerodynamic drag modeling  
 v3.0 - Replaced loop-based calculations with a more efficient vectorized approach using linear algebra
+
+TODO:
+-----
+- [x] add drag model
+- [x] convert to matrix solver from loop based solver
+- [x] output maximums and minums
+- [x] out put csv of all data
+- [ ] add multi run and comparison capabiltiy
+- [ ] incorperate density and force update back into matrix solver
+- [ ] add thrust curves
+- [ ] height dependent gravity
+- [ ] add parachut staging
+- [ ] add super sonic drag modeling
+- [ ] add skin drag modeling
+- [ ] conver to full 3D sim
 """
 
 
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 
 
@@ -75,35 +92,69 @@ M_s = np.array([[1, t_step, 0, 0, 0, 0, 0, 0],                          # system
                 [0, 0, 0, 0, 0, 0, 1, t_step],
                 [0, 0, 0, 0, 0, 0, 0, 1]])
 
-labels = np.array(["Position (ft)",                                     # labels for plots
-                   "Velocity (ft/s)", 
-                   "Acceleration (ft/s^2)", 
-                   "Force (lbf)", 
-                   "Mass (slugs)", 
-                   "Density (slugs/ft^3)",
-                   "Time (sec)"]) 
-
 M_sol = M_n                                                             # solution matrix
 
 
 
-# Solver: M_s*V_n = V_n+1
+# Solver: M_s*M_n = M_n+1
 while M_n[0, 0] > 0:
 
+    # Thrust Cutoff
     if M_n[6, 0] >= t_burn:
         M_s[3, 7], M_s[4, 7] = 0, 0
 
-    M_s[3, 1] = -0.5*Cd*A*M_n[5, 0]*abs(M_n[1, 0])
+    # Update system matrix
+    M_s[3, 1] = -0.5*Cd*A*M_n[5, 0]*abs(M_n[1, 0])     
     M_s[5, 7] = (5.1483*10**(-3))/(1 + np.exp((4.74359*10**(-5))*M_n[0, 0] + 0.168201))
 
+    # Calculate solution
     M_n = np.dot(M_s, M_n)
-
     M_sol = np.hstack([M_sol, M_n])
 
 
 
-# Plot all data
-for i in range(np.size(M_n) - 2):
+# Display and Save Maximum and Minimum Points
+M_sol[4, :] =  M_sol[4, :] * g                    # convert slugs to lbm
+
+max_mins = {                                      # collect all max and min points
+    "Data": ["max", "t max", "min", "t min"],
+    "Position (ft)": [M_sol[0, :].max(), M_sol[6, M_sol[0, :].argmax()], M_sol[0, :].min(), M_sol[6, M_sol[0, :].argmin()]],
+    "Velocity (ft/s)": [M_sol[1, :].max(), M_sol[6, M_sol[1, :].argmax()], M_sol[1, :].min(), M_sol[6, M_sol[1, :].argmin()]],
+    "Acceleration (ft/s^2)": [M_sol[2, :].max(), M_sol[6, M_sol[2, :].argmax()], M_sol[2, :].min(), M_sol[6, M_sol[2, :].argmin()]],
+    "Force (lbf)": [M_sol[3, :].max(), M_sol[6, M_sol[3, :].argmax()], M_sol[3, :].min(), M_sol[6, M_sol[4, :].argmin()]],
+    "Mass (lbm)": [M_sol[4, :].max(), M_sol[6, M_sol[4, :].argmax()], M_sol[4, :].min(), M_sol[6, M_sol[5, :].argmin()]],
+    "Density (slugs/ft^3)": [M_sol[5, :].max(), M_sol[6, M_sol[5, :].argmax()], M_sol[5, :].min(), M_sol[6, M_sol[5, :].argmin()]]
+}
+
+mm_table = pd.DataFrame(max_mins)
+mm_table.to_csv("rocket_maxmin_data.csv", index=False)
+print(mm_table) 
+
+
+
+# Display and Save Simulation Data
+flight_data = {                                   # collect all data for csv
+    "Time (sec)": M_sol[6, :],
+    "Position (ft)": M_sol[0, :],
+    "Velocity (ft/s)": M_sol[1, :],
+    "Acceleration (ft/s^2)": M_sol[2, :],
+    "Force (lbf)": M_sol[3, :],
+    "Mass (lbm)": M_sol[4, :],
+    "Density (slugs/ft^3)": M_sol[5, :],
+}
+
+fd_table = pd.DataFrame(flight_data)
+fd_table.to_csv("rocket_flight_data.csv", index=False)
+
+labels = np.array(["Position (ft)",            # all lables for plots                   
+                   "Velocity (ft/s)", 
+                   "Acceleration (ft/s^2)", 
+                   "Force (lbf)", 
+                   "Mass (lbm)", 
+                   "Density (slugs/ft^3)",
+                   "Time (sec)"])
+
+for i in range(np.size(M_n) - 2):              # plot all variables over time
 
     plt.figure()
     plt.plot(M_sol[-2, :], M_sol[i, :])
