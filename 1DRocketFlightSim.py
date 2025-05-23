@@ -39,7 +39,7 @@ v3.0 - Replaced loop-based calculations with a more efficient vectorized approac
 TODO:
 -----
 - [x] add drag model
-- [x] convert to matrix solver from loop based solver
+- [x] convert to matrix solver from recursive based solver
 - [x] output maximums and minums
 - [x] out put csv of all data
 - [ ] add multi run and comparison capabiltiy
@@ -49,7 +49,7 @@ TODO:
 - [ ] add parachut staging
 - [ ] add super sonic drag modeling
 - [ ] add skin drag modeling
-- [ ] conver to full 3D sim
+- [ ] convert to full 3D sim
 """
 
 
@@ -65,12 +65,12 @@ rho_STP = 23.67*(10**-4)  # (desnity at standard tempurature and pressure) slug/
 g = 32.17                 # (gravity) ft/s^2
 
 # Input Variables
-A = 10**2/4*np.pi/144     # (frontal area) ft^2
+A = 14**2/4*np.pi/144     # (frontal area) ft^2
 Cd = 0.75                 # (ballistic coeff)
-F_t = 5000                # (thrust) lbm
-m_0 = 200/g               # (dry mass) slugs
-m_p = 250/g               # (propellent mass) slugs
-m_dot = 15/g              # (mass flow) slugs
+F_t = 3000                # (thrust) lbm
+m_0 = 250/g               # (dry mass) slugs
+m_p = 300/g               # (propellent mass) slugs
+m_dot = 10/g              # (mass flow) slugs
 t_step = 0.1              # (delta t) sec
 
 # Calculated Values
@@ -146,7 +146,7 @@ flight_data = {                                   # collect all data for csv
 fd_table = pd.DataFrame(flight_data)
 fd_table.to_csv("rocket_flight_data.csv", index=False)
 
-labels = np.array(["Position (ft)",            # all lables for plots                   
+labels = np.array(["Position (ft)",              # all lables for plots                   
                    "Velocity (ft/s)", 
                    "Acceleration (ft/s^2)", 
                    "Force (lbf)", 
@@ -154,7 +154,7 @@ labels = np.array(["Position (ft)",            # all lables for plots
                    "Density (slugs/ft^3)",
                    "Time (sec)"])
 
-for i in range(np.size(M_n) - 2):              # plot all variables over time
+for i in range(np.size(M_n) - 2):                # plot all variables over time
 
     plt.figure()
     plt.plot(M_sol[-2, :], M_sol[i, :])
