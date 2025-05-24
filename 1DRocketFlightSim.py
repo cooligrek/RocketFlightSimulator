@@ -5,7 +5,7 @@
 Author: Ivan Krat 
 Initial Release: 2021  
 Latest Update: 2025-05-22  
-Version: 4.0
+Version: 4.1
 
 Description:
 ------------
@@ -66,14 +66,15 @@ rho_STP = 23.67*(10**-4)  # (desnity at standard tempurature and pressure) slug/
 g = 32.17                 # (gravity) ft/s^2
 
 # Input Variables
-D = 11                    # (diameter) in
-L = 18                    # (rocket length) ft
+luanch_altitude = 2400    # (altitude of launch site) ft
+D = 4                     # (rocket diameter) in
+L = 5                     # (rocket length) ft
 Cd = 0.75                 # (ballistic coeff)
 Cf = 0.004                # (friction coeff)
-F_t = 3000                # (thrust) lbm
-m_0 = 225/g               # (dry mass) slugs
-m_p = 300/g               # (propellent mass) slugs
-m_dot = 10/g              # (mass flow) slugs
+F_t = 237                 # (thrust) lbm
+m_0 = 12/g                # (dry mass) slugs
+m_p = 2/g                 # (propellent mass) slugs
+m_dot = 0.9/g             # (mass flow) slugs
 t_step = 0.1              # (delta t) sec
 
 # Calculated Values
@@ -82,18 +83,19 @@ S = L*D*np.pi/144         # (surface area) ft^2
 t_burn = m_p/m_dot        # (burn time) sec
 m_net = m_0 + m_p         # (starting mass) slugs
 F_net = F_t + m_net*-g    # (starting net force) lbm
+rho_launch = (5.1483*10**(-3))/(1 + np.exp((4.74359*10**(-5))*luanch_altitude + 0.168201))
 
 
 
 # Matrices: x, v, a, F, m, rho, t, constants
-M_n = np.array([[1], [0], [0], [F_net], [m_net], [rho_STP], [0], [1]])  # state matrix
+M_n = np.array([[luanch_altitude + 1], [0], [0], [F_net], [m_net], [rho_launch], [0], [1]])  # state matrix
 
 M_s = np.array([[1, t_step, 0, 0, 0, 0, 0, 0],                          # system matrix
                 [0, 1, t_step, 0, 0, 0, 0, 0], 
                 [0, 0, 0, 1/(M_n[4, 0]), 0, 0, 0, 0],
                 [0, -0.5*M_n[5, 0]*abs(M_n[1, 0])*(Cd*A + Cf*S), 0, 0, -g, 0, 0, F_t], 
                 [0, 0, 0, 0, 1, 0, 0, -m_dot*t_step], 
-                [0, 0, 0, 0, 0, 0, 0, rho_STP],
+                [0, 0, 0, 0, 0, 0, 0, rho_launch],
                 [0, 0, 0, 0, 0, 0, 1, t_step],
                 [0, 0, 0, 0, 0, 0, 0, 1]])
 
@@ -102,7 +104,7 @@ M_sol = M_n                                                             # soluti
 
 
 # Solver: M_s*M_n = M_n+1
-while M_n[0, 0] > 0:
+while M_n[0, 0] > luanch_altitude:
 
     # Thrust Cutoff
     if M_n[6, 0] >= t_burn:
@@ -115,8 +117,6 @@ while M_n[0, 0] > 0:
     # Calculate solution
     M_n = np.dot(M_s, M_n)
     M_sol = np.hstack([M_sol, M_n])
-
-
 
 # Display and Save Maximum and Minimum Points
 M_sol[4, :] =  M_sol[4, :] * g                    # convert slugs to lbm
