@@ -26,7 +26,7 @@ Libraries Used:
 Assumptions:
 ------------
 - Atmospheric density is treated as a function of altitude.
-- Drag force is calculated using a fixed or parameterized drag coefficient.
+- Drag force is calculated using a fixed drag coefficient.
 - Thrust is assumed to be constant during the burn period.
 - The rocket is constrained to vertical motion (no pitch/yaw dynamics).
 
@@ -43,14 +43,12 @@ TODO:
 - [x] convert to matrix solver from recursive based solver
 - [x] output maximums and minums
 - [x] out put csv of all data
+- [x] implement Isp
+- [ ] add inputs to output csv and prints
 - [ ] add multi run and comparison capabiltiy
 - [ ] incorperate density and force update back into matrix solver
 - [ ] add thrust curves
-- [ ] height dependent gravity
-- [ ] add parachut staging
-- [ ] add super sonic drag modeling
-- [x] add skin drag modeling
-- [ ] convert to full 3D sim
+- [X] add parachut staging
 """
 
 
@@ -58,8 +56,14 @@ TODO:
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sympy import true
 
 
+
+# outputs
+graphs_on = True
+max_min_on = True
+data_to_csv = True
 
 # Constants:
 rho_STP = 23.67*(10**-4)  # (desnity at standard tempurature and pressure) slug/ft^3
@@ -67,39 +71,45 @@ g = 32.17                 # (gravity) ft/s^2
 
 # Input Variables
 luanch_altitude = 2400    # (altitude of launch site) ft
-D = 4                     # (rocket diameter) in
-L = 5                     # (rocket length) ft
-Cd = 0.75                 # (ballistic coeff)
-Cf = 0.004                # (friction coeff)
-F_t = 237                 # (thrust) lbm
-m_0 = 12/g                # (dry mass) slugs
-m_p = 2/g                 # (propellent mass) slugs
-m_dot = 0.9/g             # (mass flow) slugs
+main_altiude = 1000       # (altitude of main parchute deploy above luanch altitude) ft
+D_v = 8                   # (vehical diameter) in
+D_d = 4                   # (droug parachute diameter) ft
+D_m = 8                   # (main parachute diameter) ft
+Cd_v = 0.75               # (vehical drag coeff)
+Cd_p = 1.75               # (parachute drag coeff) 
+F_t = 1000                # (thrust) lbm
+m_0 = 200/g               # (dry mass) lbm/g = slugs
+m_p = 100/g               # (propellent mass) lbm/g = slugs
+Isp =  250                # (specific impulse) sec
 t_step = 0.1              # (delta t) sec
 
 # Calculated Values
-A = D**2/4*np.pi/144      # (frontal area) ft^2
-S = L*D*np.pi/144         # (surface area) ft^2
-t_burn = m_p/m_dot        # (burn time) sec
+A_v = D_v**2/4*np.pi/144  # (vehical frontal area) ft^2
+A_d = D_d**2/4*np.pi      # (droug parachute frontal area) ft^2
+A_m = D_m**2/4*np.pi      # (main parachute frontal area) ft^2
+A = A_v                   # (inital frontal area) ft^2
+Cd = Cd_v                 # (inital drag coeff)
+m_dot = F_t/Isp/g         # (proppelent mass flow rate) slugs/sec
+t_burn =  m_p/m_dot       # (burn time) sec
 m_net = m_0 + m_p         # (starting mass) slugs
 F_net = F_t + m_net*-g    # (starting net force) lbm
-rho_launch = (5.1483*10**(-3))/(1 + np.exp((4.74359*10**(-5))*luanch_altitude + 0.168201))
+rho = (5.1483*10**(-3))/(1 + np.exp((4.74359*10**(-5))*luanch_altitude + 0.168201))  # (inital atm desnity) slug/ft^3
 
+# (state matrix) x, v, a, F, m, rho, t, constants
+M_n = np.array([[luanch_altitude + 1], [0], [0], [F_net], [m_net], [rho], [0], [1]])
 
+# (system matrix)
+M_s = np.array([[1, t_step, 0, 0, 0, 0, 0, 0],          # x + v*dt
+                [0, 1, t_step, 0, 0, 0, 0, 0],          # v + a*dt
+                [0, 0, 0, 1/(M_n[4, 0]), 0, 0, 0, 0],   # a +  F/m
+                [0, -0.5*M_n[5, 0]*abs(M_n[1, 0])*(Cd*A), 0, 0, -g, 0, 0, F_t],   # 1/2*rho*A*Cd*v^2 + F_t -g*m
+                [0, 0, 0, 0, 1, 0, 0, -m_dot*t_step],   # m - m_dot*dt
+                [0, 0, 0, 0, 0, 0, 0, rho],             # rho (updated in solver)
+                [0, 0, 0, 0, 0, 0, 1, t_step],          # t + dt
+                [0, 0, 0, 0, 0, 0, 0, 1]])              # 1
 
-# Matrices: x, v, a, F, m, rho, t, constants
-M_n = np.array([[luanch_altitude + 1], [0], [0], [F_net], [m_net], [rho_launch], [0], [1]])  # state matrix
-
-M_s = np.array([[1, t_step, 0, 0, 0, 0, 0, 0],                          # system matrix
-                [0, 1, t_step, 0, 0, 0, 0, 0], 
-                [0, 0, 0, 1/(M_n[4, 0]), 0, 0, 0, 0],
-                [0, -0.5*M_n[5, 0]*abs(M_n[1, 0])*(Cd*A + Cf*S), 0, 0, -g, 0, 0, F_t], 
-                [0, 0, 0, 0, 1, 0, 0, -m_dot*t_step], 
-                [0, 0, 0, 0, 0, 0, 0, rho_launch],
-                [0, 0, 0, 0, 0, 0, 1, t_step],
-                [0, 0, 0, 0, 0, 0, 0, 1]])
-
-M_sol = M_n                                                             # solution matrix
+# (solution matrix) x, v, a, F, m, rho, t, constants
+M_sol = M_n
 
 
 
@@ -110,17 +120,29 @@ while M_n[0, 0] > luanch_altitude:
     if M_n[6, 0] >= t_burn:
         M_s[3, 7], M_s[4, 7] = 0, 0
 
+    # Droug Parachute Deploy
+    if M_n[1, 0] < 0:
+        A = A_d
+        Cd = Cd_p
+    
+    # Main Parachute Deploy
+    if M_n[1, 0] < 0 and M_n[0, 0] < (main_altiude+luanch_altitude):
+        A = A_m
+        Cd = Cd_p
+
     # Update system matrix
-    M_s[3, 1] = -0.5*M_n[5, 0]*abs(M_n[1, 0])*(Cd*A + Cf*S)    
+    M_s[3, 1] = -0.5*M_n[5, 0]*abs(M_n[1, 0])*(Cd*A)    
     M_s[5, 7] = (5.1483*10**(-3))/(1 + np.exp((4.74359*10**(-5))*M_n[0, 0] + 0.168201))
 
     # Calculate solution
     M_n = np.dot(M_s, M_n)
     M_sol = np.hstack([M_sol, M_n])
 
-# Display and Save Maximum and Minimum Points
 M_sol[4, :] =  M_sol[4, :] * g                    # convert slugs to lbm
 
+
+
+# Display and Save Maximum and Minimum Points
 max_mins = {                                      # collect all max and min points
     "Data": ["max", "t max", "min", "t min"],
     "Position (ft)": [M_sol[0, :].max(), M_sol[6, M_sol[0, :].argmax()], M_sol[0, :].min(), M_sol[6, M_sol[0, :].argmin()]],
@@ -131,9 +153,10 @@ max_mins = {                                      # collect all max and min poin
     "Density (slugs/ft^3)": [M_sol[5, :].max(), M_sol[6, M_sol[5, :].argmax()], M_sol[5, :].min(), M_sol[6, M_sol[5, :].argmin()]]
 }
 
-mm_table = pd.DataFrame(max_mins)
-mm_table.to_csv("rocket_maxmin_data.csv", index=False)
-print(mm_table) 
+if(max_min_on): 
+    mm_table = pd.DataFrame(max_mins)
+    mm_table.to_csv("rocket_maxmin_data.csv", index=False)
+    print(mm_table) 
 
 
 
@@ -148,8 +171,9 @@ flight_data = {                                   # collect all data for csv
     "Density (slugs/ft^3)": M_sol[5, :],
 }
 
-fd_table = pd.DataFrame(flight_data)
-fd_table.to_csv("rocket_flight_data.csv", index=False)
+if(data_to_csv):
+    fd_table = pd.DataFrame(flight_data)
+    fd_table.to_csv("rocket_flight_data.csv", index=False)
 
 labels = np.array(["Position (ft)",              # all lables for plots                   
                    "Velocity (ft/s)", 
@@ -159,12 +183,13 @@ labels = np.array(["Position (ft)",              # all lables for plots
                    "Density (slugs/ft^3)",
                    "Time (sec)"])
 
-for i in range(np.size(M_n) - 2):                # plot all variables over time
+if(graphs_on):
+    for i in range(np.size(M_n) - 2):                # plot all variables over time
 
-    plt.figure()
-    plt.plot(M_sol[-2, :], M_sol[i, :])
-    plt.xlabel(labels[-1])
-    plt.ylabel(labels[i])
-    plt.show(block=False)
+        plt.figure()
+        plt.plot(M_sol[-2, :], M_sol[i, :])
+        plt.xlabel(labels[-1])
+        plt.ylabel(labels[i])
+        plt.show(block=False)
 
-plt.show()
+    plt.show()
